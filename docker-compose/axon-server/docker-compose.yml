@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  axonserver:
+    image: axoniq/axonserver:2024.1.2
+    container_name: axonserver
+    hostname: axonserver
+    ports:
+      - "8024:8024"  # Web Console
+      - "8124:8124"  # gRPC
+    environment:
+      - AXONSERVER_NAME=axonserver
+      - AXONSERVER_HOSTNAME=localhost
+      - AXONSERVER_DEV_MODE=true
+    volumes:
+      - axonserver-data:/data
+      - axonserver-events:/events  # 建議分開存放事件資料
+      - axonserver-log:/log
+
+volumes:
+  axonserver-data:
+  axonserver-events:
+  axonserver-log:
