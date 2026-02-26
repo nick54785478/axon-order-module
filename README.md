@@ -2,6 +2,20 @@
 
 這是一個基於 Axon Framework 實作的高性能、彈性訂單管理系統。本專案採用 事件溯源 (Event Sourcing) 與 CQRS (命令查詢職責分離) 模式，並透過 Orchestration Saga 處理複雜的跨領域長事務。
 
+**技術及外部依賴**
+
+**1. 技術**
+* Axon Framwork
+* MapStruct : 資料轉換
+* Jackson
+* Spring Data JPA
+
+**2. 外部依賴**
+* Axon Server : 事件儲存 (寫)
+* MySQL : 查詢資料庫 (讀)
+
+---
+
 ## 核心架構：六角形與整潔架構 (Hexagonal Architecture)
 
 專案遵循整潔架構原則，確保業務邏輯（Domain）與技術細節（Infrastructure）完全解耦：
@@ -16,6 +30,8 @@
 
 >* Input Adapters：REST 控制器（Controllers），處理外界請求。
 >* Output Adapters：JPA 投影處理器（Projections），負責讀取模型同步。
+
+---
 
 ## Saga 業務流程設計
 
@@ -49,6 +65,8 @@
 
 >* 若未付款：僅同步取消支付紀錄。
 >* 若已付款：自動觸發 RefundPaymentCommand 進行退款。
+
+---
 
 ## 技術關鍵點 (Technical Highlights)
 
