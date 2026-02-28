@@ -1,7 +1,6 @@
 package com.example.demo.iface.rest;
 
 import java.util.ArrayList;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 import org.springframework.http.HttpStatus;
@@ -28,6 +27,7 @@ import com.example.demo.iface.dto.res.OrderQueriedResource;
 import com.example.demo.iface.dto.res.OrderShipmentConfirmedResource;
 import com.example.demo.iface.dto.res.OrdersQueriedResource;
 import com.example.demo.iface.dto.res.PaymentsQueriedResource;
+import com.example.demo.infra.mapper.OrderMapper;
 
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +38,7 @@ import lombok.extern.slf4j.Slf4j;
 @RequestMapping("/orders")
 public class OrderController {
 
+	private final OrderMapper orderMapper;
 	private final OrderQueryService queryService;
 	private final OrderCommandService commandService;
 
@@ -45,22 +46,32 @@ public class OrderController {
 	 * 建立訂單
 	 */
 	@PostMapping("")
-	public ResponseEntity<OrderCreatedResource> createOrder(@RequestBody CreateOrderResource resource) {
-		String orderId = UUID.randomUUID().toString();
-		CreateOrderCommand command = new CreateOrderCommand(orderId, resource.amount());
-		commandService.createOrder(command);
-		return new ResponseEntity<>(new OrderCreatedResource("200", "建立訂單成功", orderId), HttpStatus.CREATED);
+	public CompletableFuture<ResponseEntity<OrderCreatedResource>> createOrder(
+			@RequestBody CreateOrderResource resource) {
+		// 利用我們之前在 Command Record 寫的邏輯：若沒傳 ID 就自動產生
+		CreateOrderCommand command = orderMapper.transformACL(resource);
+		String orderId = command.orderId(); // 從 Command 拿 ID，確保一致性
+
+		return commandService.createOrder(command).thenApply(result -> ResponseEntity.status(HttpStatus.CREATED)
+				.body(new OrderCreatedResource("200", "建立訂單成功", orderId))).exceptionally(ex -> {
+					log.error("[API] 建立訂單失敗: {}", ex.getMessage());
+					return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+							.body(new OrderCreatedResource("400", "金額或品項錯誤: " + ex.getCause().getMessage(), null));
+				});
 	}
 
 	/**
 	 * 手動確認出貨 API
 	 */
 	@PutMapping("/{orderId}/ship")
-	public ResponseEntity<OrderShipmentConfirmedResource> confirmShipment(@PathVariable String orderId) {
+	public CompletableFuture<ResponseEntity<OrderShipmentConfirmedResource>> confirmShipment(
+			@PathVariable String orderId) {
 		ConfirmOrderShipmentCommand command = new ConfirmOrderShipmentCommand(orderId);
-		// 發送 ConfirmOrderShipmentCommand
-		commandService.confirmShipment(command);
-		return new ResponseEntity<>(new OrderShipmentConfirmedResource("200", "出貨成功", orderId), HttpStatus.OK);
+
+		return commandService.confirmShipment(command)
+				.thenApply(result -> ResponseEntity.ok(new OrderShipmentConfirmedResource("200", "出貨成功", orderId)))
+				.exceptionally(ex -> ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+						new OrderShipmentConfirmedResource("400", "出貨失敗: " + ex.getCause().getMessage(), orderId)));
 	}
 
 	/**

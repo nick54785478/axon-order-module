@@ -1,19 +1,21 @@
 package com.example.demo.application.domain.order.projection;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 
+import jakarta.persistence.CollectionTable;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * Order Read Model (Projection)
- *
- * <p>
- * 充血模型，封裝狀態變更方法，並提供狀態判斷方法。 可在 EventHandler 或 Query Service 使用。
- * </p>
+ * OrderView - 訂單詳情 (查詢端模型)
  */
 @Entity
 @Getter
@@ -24,59 +26,38 @@ public class OrderView {
 	@Id
 	private String orderId;
 
+	/**
+	 * 使用 ElementCollection 存儲簡單的品項集合
+	 */
+	@ElementCollection(fetch = FetchType.EAGER)
+	@CollectionTable(name = "order_view_items", joinColumns = @JoinColumn(name = "order_id"))
+	private List<OrderItemView> items = new ArrayList<>();
+
 	private BigDecimal amount;
 
 	private String status;
-	
-	
 
-	/**
-	 * 標記訂單為出貨
-	 * <p>
-	 * 具備 Idempotent 特性：若已出貨則不重複操作
-	 * </p>
-	 */
+	// ##### 充血模型：狀態變更方法 #####
+
 	public void markShipped() {
-		if (!"SHIPPED".equals(this.status)) {
-			this.status = "SHIPPED";
-		}
+		this.status = "SHIPPED";
 	}
-	
-	/**
-	 * 標記訂單為出貨
-	 * <p>
-	 * 具備 Idempotent 特性：若已出貨則不重複操作
-	 * </p>
-	 */
+
 	public void markNotified() {
-		if (!"NOTIFIED".equals(this.status)) {
-			this.status = "NOTIFIED";
-		}
+		this.status = "NOTIFIED";
 	}
 
-	/**
-	 * 標記訂單為取消
-	 * <p>
-	 * 具備 Idempotent 特性：若已取消則不重複操作
-	 * </p>
-	 */
 	public void markCancelled() {
-		if (!"CANCELLED".equals(this.status)) {
-			this.status = "CANCELLED";
-		}
+		this.status = "CANCELLED";
 	}
 
-	/**
-	 * 是否可以出貨
-	 */
+	// ##### 查詢輔助方法 #####
+
 	public boolean canShip() {
-		return "CREATED".equals(this.status);
+		return "NOTIFIED".equals(this.status);
 	}
 
-	/**
-	 * 是否可以取消
-	 */
 	public boolean canCancel() {
-		return "CREATED".equals(this.status);
+		return !"SHIPPED".equals(this.status) && !"CANCELLED".equals(this.status);
 	}
 }

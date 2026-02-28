@@ -61,8 +61,9 @@ public class OrderManagementSaga {
 	private String paymentDeadlineId;
 
 	/**
-	 * 步驟 1：訂單建立 (Saga 起點) * @param event 訂單建立事件
+	 * 步驟 1：訂單建立 (Saga 起點)
 	 * 
+	 * @param event           訂單建立事件
 	 * @param commandGateway  用於發送 CreatePaymentCommand
 	 * @param deadlineManager 用於預約支付超時任務
 	 */
@@ -91,8 +92,9 @@ public class OrderManagementSaga {
 	}
 
 	/**
-	 * 步驟 2：外部觸發支付成功 * @param event 支付完成事件 (由使用者調用支付 API 觸發)
+	 * 步驟 2：外部觸發支付成功
 	 * 
+	 * @param event           支付完成事件 (由使用者調用支付 API 觸發)
 	 * @param commandGateway  用於發送出貨通知
 	 * @param deadlineManager 用於取消支付超時任務
 	 */
@@ -117,8 +119,9 @@ public class OrderManagementSaga {
 	}
 
 	/**
-	 * 支付超時處理器 (Deadline Handler) * @param event 原始建立訂單事件
+	 * 支付超時處理器 (Deadline Handler)
 	 * 
+	 * @param event          原始建立訂單事件
 	 * @param commandGateway 用於執行超時取消
 	 */
 	@DeadlineHandler(deadlineName = "payment-deadline")
@@ -129,8 +132,9 @@ public class OrderManagementSaga {
 	}
 
 	/**
-	 * 步驟 5：訂單取消處理 (手動或超時觸發) * @param event 訂單取消事件
+	 * 步驟 5：訂單取消處理 (手動或超時觸發)
 	 * 
+	 * @param event          訂單取消事件
 	 * @param commandGateway 用於執行支付關閉或退款
 	 */
 	@SagaEventHandler(associationProperty = "orderId")
@@ -155,6 +159,8 @@ public class OrderManagementSaga {
 
 	/**
 	 * 流程終點：成功通知出貨
+	 * 
+	 * @param event 訂單通知事件
 	 */
 	@SagaEventHandler(associationProperty = "orderId")
 	public void on(OrderNotifiedEvent event) {
