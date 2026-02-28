@@ -17,7 +17,10 @@ import lombok.Setter;
 @NoArgsConstructor
 @AllArgsConstructor
 public class OrderItemView {
+	
 	private String productId;
+	
 	private Integer quantity;
+	
 	private BigDecimal price;
 }

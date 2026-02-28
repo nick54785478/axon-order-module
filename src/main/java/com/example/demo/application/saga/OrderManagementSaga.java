@@ -27,12 +27,14 @@ import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * OrderManagementSaga - 訂單管理流程協調者 *
- * <p>
- * 採用 Orchestration Saga 模式，負責協調 Order 與 Payment 聚合根之間的業務流程。 具備以下特性： 1.
- * 狀態持久化：成員變數會自動存入 saga_entry 供後續流程使用。 2. 支付超時管理：利用 DeadlineManager 實作支付倒數計時。 3.
- * 補償邏輯：當訂單取消時，確保支付紀錄同步關閉或退款。
- * </p>
+ * OrderManagementSaga - 訂單管理流程協調者
+ * 
+ * <pre>
+ * 採用 Orchestration Saga 模式，負責協調 Order 與 Payment 聚合根之間的業務流程。 具備以下特性： 
+ * 1. 狀態持久化：成員變數會自動存入 saga_entry 供後續流程使用。 
+ * 2. 支付超時管理：利用 DeadlineManager 實作支付倒數計時。 
+ * 3. 補償邏輯：當訂單取消時，確保支付紀錄同步關閉或退款。
+ * </pre>
  */
 @Saga
 @Slf4j
