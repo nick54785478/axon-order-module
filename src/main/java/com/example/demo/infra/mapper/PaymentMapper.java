@@ -11,8 +11,8 @@ import com.example.demo.config.config.MapStructConfiguration;
 @Mapper(componentModel = "spring", config = MapStructConfiguration.class)
 public interface PaymentMapper {
 
-	PaymentQueriedView transformProjection(PaymentView projection);
-	
-	List<PaymentQueriedView> transformProjection(List<PaymentView> projections);
+	PaymentQueriedView toQueriedView(PaymentView projection);
+
+	List<PaymentQueriedView> toQueriedView(List<PaymentView> projections);
 
 }

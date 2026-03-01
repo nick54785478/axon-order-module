@@ -21,12 +21,18 @@ public class OrderQueriedView {
 	private String status;
 
 	/**
-	 * * 新增：訂單品項 DTO 列表
+	 * 訂單品項列表
+	 * <p>
+	 * 包含此訂單下的所有商品資訊，方便前端一次顯示完整詳情。
+	 * </p>
 	 */
 	private List<OrderItemQueriedView> items;
 
 	/**
-	 * 用於 API 回傳的品項 DTO
+	 * OrderItemQueriedView - 用於 API 回傳的品項 DTO (Record) * @param productId 產品識別碼
+	 * 
+	 * @param quantity 訂購數量
+	 * @param price    購買時的單價
 	 */
 	public record OrderItemQueriedView(String productId, Integer quantity, BigDecimal price) {
 	}

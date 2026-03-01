@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 
 import com.example.demo.application.domain.product.command.CreateProductCommand;
 import com.example.demo.application.domain.product.command.ReduceStockCommand;
+import com.example.demo.application.domain.product.command.UpdateProductCommand;
 import com.example.demo.application.shared.command.AddStockCommand;
 
 import lombok.RequiredArgsConstructor;
@@ -39,6 +40,10 @@ public class ProductCommandService {
 	public CompletableFuture<String> createProduct(CreateProductCommand command) {
 		log.info("[Product Service] 接收到產品建立請求: {}", command.name());
 		return commandGateway.send(command);
+	}
+	
+	public CompletableFuture<Void> updateProduct(UpdateProductCommand command) {
+	    return commandGateway.send(command);
 	}
 
 	/**

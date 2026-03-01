@@ -18,8 +18,8 @@ import com.example.demo.iface.dto.req.CreateOrderResource;
 @Mapper(componentModel = "spring", config = MapStructConfiguration.class)
 public interface OrderMapper {
 
-	OrderQueriedView transformProjection(OrderView projection);
-
+	OrderQueriedView toQueriedView(OrderView entity);
+	
 	OrderItemQueriedView toItemDto(OrderItemView itemView);
 
 	List<OrderQueriedView> transformProjection(List<OrderView> projections);

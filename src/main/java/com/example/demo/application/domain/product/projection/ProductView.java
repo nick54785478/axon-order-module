@@ -44,6 +44,14 @@ public class ProductView {
 	 */
 	private Integer stock;
 
+	/**
+	 * 核心新增：儲存來自 Aggregate 的版本號
+	 * <p>
+	 * 此版本號對應 Event Store 中的 Sequence Number。
+	 * </p>
+	 */
+	private Long version;
+
 	// ##### 狀態變更方法 (State Mutators) #####
 
 	/**
@@ -52,11 +60,23 @@ public class ProductView {
 	 * 當接收到 ProductCreatedEvent 時呼叫。
 	 * </p>
 	 */
-	public void markCreated(String name, BigDecimal price, Integer initialStock) {
-		this.name = name;
-		this.price = price;
-		this.stock = initialStock;
-	}
+	public void markCreated(String name, BigDecimal price, Integer initialStock, Long version) {
+        this.name = name;
+        this.price = price;
+        this.stock = initialStock;
+        this.version = version;
+    }
+	
+	public void updateInfo(String name, BigDecimal price, Long version) {
+        this.name = name;
+        this.price = price;
+        this.version = version;
+    }
+	
+	public void updateStock(Integer newStock, Long version) {
+        this.stock = newStock;
+        this.version = version;
+    }
 
 	/**
 	 * 執行庫存扣減

@@ -58,6 +58,18 @@ public class AxonConfiguration {
 		return new EventCountSnapshotTriggerDefinition(snapshotter, 50);
 	}
 
+	/**
+	 * 定義快照觸發策略
+	 * <p>
+	 * 當單一 Aggregate 的事件每增加 100 筆時，自動產生一個快照並存入 Axon Server。
+	 * </p>
+	 */
+	@Bean(name = "productSnapshotTriggerDefinition")
+	public SnapshotTriggerDefinition productSnapshotTriggerDefinition(Snapshotter snapshotter) {
+		// 閾值設定為 100 (可依業務頻率調整)
+		return new EventCountSnapshotTriggerDefinition(snapshotter, 100);
+	}
+
 	// 配置 DeadlineManager
 	@Bean
 	public DeadlineManager deadlineManager(org.axonframework.common.transaction.TransactionManager transactionManager,

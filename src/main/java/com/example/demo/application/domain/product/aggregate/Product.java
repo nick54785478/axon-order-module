@@ -6,11 +6,14 @@ import org.axonframework.commandhandling.CommandHandler;
 import org.axonframework.eventsourcing.EventSourcingHandler;
 import org.axonframework.modelling.command.AggregateIdentifier;
 import org.axonframework.modelling.command.AggregateLifecycle;
+import org.axonframework.modelling.command.AggregateVersion;
 import org.axonframework.spring.stereotype.Aggregate;
 
 import com.example.demo.application.domain.product.command.CreateProductCommand;
 import com.example.demo.application.domain.product.command.ReduceStockCommand;
+import com.example.demo.application.domain.product.command.UpdateProductCommand;
 import com.example.demo.application.domain.product.event.ProductCreatedEvent;
+import com.example.demo.application.domain.product.event.ProductUpdatedEvent;
 import com.example.demo.application.domain.product.event.StockReducedEvent;
 import com.example.demo.application.shared.command.AddStockCommand;
 import com.example.demo.application.shared.event.StockAddedEvent;
@@ -25,16 +28,17 @@ import lombok.extern.slf4j.Slf4j;
  * </p>
  */
 @Slf4j
-@Aggregate
 @NoArgsConstructor
+@Aggregate(snapshotTriggerDefinition = "productSnapshotTriggerDefinition")
 public class Product {
 
 	@AggregateIdentifier
 	private String productId;
-
 	private String name;
 	private Integer stock;
 	private BigDecimal price;
+	@AggregateVersion
+	private Long version; // Axon 會自動管理此值，並將其與 Command 中的版本號比對。
 
 	/**
 	 * 【指令處理器】建立產品
@@ -79,6 +83,25 @@ public class Product {
 		AggregateLifecycle.apply(new StockAddedEvent(this.productId, command.orderId(), command.quantity()));
 	}
 
+	/**
+	 * 【指令處理器】更新產品資訊
+	 * <p>
+	 * Axon 會自動比對指令中的 version 與目前的 Aggregate 版本。
+	 * </p>
+	 */
+	@CommandHandler
+	public void handle(UpdateProductCommand command) {
+		log.info("[Product] 處理 UpdateProductCommand: {}, Version: {}", command.productId(), command.version());
+
+		// 業務規則校驗
+		if (command.price().compareTo(BigDecimal.ZERO) <= 0) {
+			throw new IllegalArgumentException("更新失敗：價格必須大於零");
+		}
+
+		// 發布更新事件
+		AggregateLifecycle.apply(new ProductUpdatedEvent(this.productId, command.name(), command.price()));
+	}
+
 	// ##### Event Sourcing Handlers (重建狀態) #####
 
 	@EventSourcingHandler
@@ -98,5 +121,14 @@ public class Product {
 	public void on(StockAddedEvent event) {
 		// 還原庫存，狀態重回正確數值
 		this.stock += event.quantity();
+	}
+
+	/**
+	 * 響應更新事件：更新內部狀態
+	 */
+	@EventSourcingHandler
+	public void on(ProductUpdatedEvent event) {
+		this.name = event.name();
+		this.price = event.price();
 	}
 }

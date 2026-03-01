@@ -22,6 +22,7 @@ CREATE TABLE `product_view` (
   `name` VARCHAR(255) NOT NULL COMMENT '產品名稱',
   `price` DECIMAL(19, 2) NOT NULL COMMENT '產品單價',
   `stock` INT NOT NULL DEFAULT 0 COMMENT '目前可用庫存',
+  `version` BIGINT NOT NULL DEFAULT 0 COMMENT '樂觀鎖版本號',
   PRIMARY KEY (`product_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
