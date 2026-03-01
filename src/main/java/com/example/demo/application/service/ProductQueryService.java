@@ -7,7 +7,9 @@ import org.axonframework.messaging.responsetypes.ResponseTypes;
 import org.axonframework.queryhandling.QueryGateway;
 import org.springframework.stereotype.Service;
 
+import com.example.demo.application.domain.product.projection.ProductPageQueriedView;
 import com.example.demo.application.domain.product.query.FindAllProductsQuery;
+import com.example.demo.application.domain.product.query.FindProductsPagedQuery;
 import com.example.demo.application.domain.product.query.GetProductQuery;
 import com.example.demo.application.shared.dto.ProductQueriedView;
 
@@ -17,8 +19,11 @@ import lombok.RequiredArgsConstructor;
  * ProductQueryService - 產品查詢應用服務
  *
  * <p>
- * 本服務屬於 Application Layer，作為查詢端的門面 (Facade)。 負責協調並發送查詢訊息至
- * {@link org.axonframework.queryhandling.QueryBus}， 並將結果非同步地回傳給 Controller 層。
+ * 本服務屬於 Application Layer，作為查詢端的門面 (Facade)。
+ * </p>
+ * <p>
+ * 負責協調並發送查詢訊息至 {@link org.axonframework.queryhandling.QueryBus}， 並將結果非同步地回傳給
+ * Interface Layer。
  * </p>
  *
  * <h3>設計核心：</h3>
@@ -63,5 +68,24 @@ public class ProductQueryService {
 	public CompletableFuture<ProductQueriedView> findById(String productId) {
 		// 使用 instanceOf 期待回傳單一物件實例
 		return queryGateway.query(new GetProductQuery(productId), ResponseTypes.instanceOf(ProductQueriedView.class));
+	}
+
+	/**
+	 * 產品分頁查詢服務 (後端分頁與過濾) *
+	 * <p>
+	 * 透過發送 {@link FindProductsPagedQuery} 進行資料檢索。 為了確保在分散式環境下（如使用 Axon
+	 * Server）訊息路由的精確性， 本方法明確要求回傳具體類別 {@link ProductPageQueriedView}，以規避 Java
+	 * 泛型擦除導致的匹配失敗。
+	 * </p>
+	 *
+	 * @param name 產品名稱關鍵字（支援模糊查詢）；若為空則檢索全量產品
+	 * @param page 目標頁碼 (從 0 開始，0 代表第一頁)
+	 * @param size 每頁顯示的資料筆數上限
+	 * @return 包含分頁內容、總筆數、總頁數等中繼資料的非同步結果
+	 */
+	public CompletableFuture<ProductPageQueriedView> findPaged(String name, int page, int size) {
+		return queryGateway.query(new FindProductsPagedQuery(name, page, size),
+				// 關鍵：使用 ResponseTypes.instanceOf(具體類別) 以解決 NoHandlerForQueryException
+				ResponseTypes.instanceOf(ProductPageQueriedView.class));
 	}
 }

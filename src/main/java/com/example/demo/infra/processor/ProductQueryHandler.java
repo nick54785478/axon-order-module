@@ -3,9 +3,15 @@ package com.example.demo.infra.processor;
 import java.util.List;
 
 import org.axonframework.queryhandling.QueryHandler;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 
+import com.example.demo.application.domain.product.projection.ProductPageQueriedView;
+import com.example.demo.application.domain.product.projection.ProductView;
 import com.example.demo.application.domain.product.query.FindAllProductsQuery;
+import com.example.demo.application.domain.product.query.FindProductsPagedQuery;
 import com.example.demo.application.domain.product.query.GetProductQuery;
 import com.example.demo.application.shared.dto.ProductQueriedView;
 import com.example.demo.infra.mapper.ProductMapper;
@@ -29,9 +35,9 @@ import lombok.extern.slf4j.Slf4j;
  * <li><b>非同步支持：</b> 配合 QueryGateway，提供高效的唯讀資料存取。</li>
  * </ul>
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
-@Slf4j
 public class ProductQueryHandler {
 
 	private final ProductViewRepository repository;
@@ -47,8 +53,8 @@ public class ProductQueryHandler {
 	public List<ProductQueriedView> handle(FindAllProductsQuery query) {
 		log.info("[Query] 處理 FindAllProductsQuery，檢索產品清單。");
 
-		return repository.findAll().stream().map(mapper::transformProjection) // 在此處進行 DTO 映射
-				.toList(); // 使用 Java 16+ 語法
+		return repository.findAll().stream().map(mapper::toQueriedView) // 在此處進行 DTO 映射
+				.toList();
 	}
 
 	/**
@@ -61,6 +67,28 @@ public class ProductQueryHandler {
 	public ProductQueriedView handle(GetProductQuery query) {
 		log.info("[Query] 處理 GetProductQuery，查詢 ID: {}", query.productId());
 
-		return repository.findById(query.productId()).map(mapper::transformProjection).orElse(null);
+		return repository.findById(query.productId()).map(mapper::toQueriedView).orElse(null);
+	}
+
+	/**
+	 * 處理產品分頁查詢
+	 * <p>
+	 * 將過濾條件從 Query 訊息中提取，並透過 Repository 執行物理分頁。
+	 * </p>
+	 */
+	@QueryHandler
+	public ProductPageQueriedView handle(FindProductsPagedQuery query) {
+		log.info("[Query] 收到分頁查詢請求：名稱={}, 頁碼={}", query.name(), query.page());
+
+		Pageable pageable = PageRequest.of(query.page(), query.size());
+
+		Page<ProductView> resultPage = (query.name() != null && !query.name().isBlank())
+				? repository.findByNameContainingIgnoreCase(query.name(), pageable)
+				: repository.findAll(pageable);
+
+		List<ProductQueriedView> content = resultPage.getContent().stream().map(mapper::toQueriedView).toList();
+
+		return new ProductPageQueriedView(content, resultPage.getTotalElements(), resultPage.getTotalPages(),
+				resultPage.getNumber());
 	}
 }
