@@ -13,17 +13,23 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.example.demo.application.domain.order.command.CancelOrderCommand;
 import com.example.demo.application.domain.order.command.ConfirmOrderShipmentCommand;
 import com.example.demo.application.domain.order.command.CreateOrderCommand;
+import com.example.demo.application.domain.order.command.ReturnOrderCommand;
 import com.example.demo.application.domain.order.query.FindAllOrdersQuery;
 import com.example.demo.application.domain.order.query.GetOrderQuery;
 import com.example.demo.application.service.OrderCommandService;
 import com.example.demo.application.service.OrderQueryService;
 import com.example.demo.application.shared.query.GetOrderPaymentsQuery;
+import com.example.demo.iface.dto.req.CancelOrderResource;
+import com.example.demo.iface.dto.req.ConfirmShipmentResource;
 import com.example.demo.iface.dto.req.CreateOrderResource;
+import com.example.demo.iface.dto.req.ReturnOrderResource;
 import com.example.demo.iface.dto.res.OrderCancelledResource;
 import com.example.demo.iface.dto.res.OrderCreatedResource;
 import com.example.demo.iface.dto.res.OrderQueriedResource;
+import com.example.demo.iface.dto.res.OrderReturnedResource;
 import com.example.demo.iface.dto.res.OrderShipmentConfirmedResource;
 import com.example.demo.iface.dto.res.OrdersQueriedResource;
 import com.example.demo.iface.dto.res.PaymentsQueriedResource;
@@ -64,13 +70,25 @@ public class OrderController {
 	 */
 	@PutMapping("/{orderId}/ship")
 	public CompletableFuture<ResponseEntity<OrderShipmentConfirmedResource>> confirmShipment(
-			@PathVariable String orderId) {
-		ConfirmOrderShipmentCommand command = new ConfirmOrderShipmentCommand(orderId);
+			@PathVariable String orderId, @RequestBody ConfirmShipmentResource resource) {
+		ConfirmOrderShipmentCommand command = new ConfirmOrderShipmentCommand(orderId, resource.version());
 
 		return commandService.confirmShipment(command)
 				.thenApply(result -> ResponseEntity.ok(new OrderShipmentConfirmedResource("200", "出貨成功", orderId)))
-				.exceptionally(ex -> ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-						new OrderShipmentConfirmedResource("400", "出貨失敗: " + ex.getCause().getMessage(), orderId)));
+				.exceptionally(ex -> {
+					Throwable cause = (ex.getCause() != null) ? ex.getCause() : ex;
+
+					// 1. 處理版本衝突
+					if (cause instanceof org.axonframework.modelling.command.ConcurrencyException) {
+						return ResponseEntity.status(HttpStatus.CONFLICT)
+								.body(new OrderShipmentConfirmedResource("409", "出貨失敗：訂單資訊已被更新，請重新整理", orderId));
+					}
+
+					// 2. 處理業務邏輯錯誤
+					return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+							.body(new OrderShipmentConfirmedResource("400", "出貨失敗: " + cause.getMessage(), orderId));
+				});
+
 	}
 
 	/**
@@ -80,9 +98,14 @@ public class OrderController {
 	 * </p>
 	 */
 	@PutMapping("/{orderId}/cancel")
-	public CompletableFuture<ResponseEntity<OrderCancelledResource>> cancelOrder(@PathVariable String orderId) {
-		log.info("[API] 收到訂單取消請求: {}", orderId);
-		return commandService.cancelOrder(orderId)
+	public CompletableFuture<ResponseEntity<OrderCancelledResource>> cancelOrder(@PathVariable String orderId,
+			@RequestBody CancelOrderResource resource) {
+
+		log.info("[API] 收到訂單取消請求: {}, 目標版本: {}", orderId, resource.version());
+
+		// 封裝成帶有版本號的指令
+		CancelOrderCommand command = new CancelOrderCommand(orderId, resource.version());
+		return commandService.cancelOrder(command)
 				.thenApply(result -> ResponseEntity.ok(new OrderCancelledResource("200", "訂單已成功提交取消請求", orderId)))
 				.exceptionally(ex -> {
 					// 處理 Aggregate 拋出的 IllegalStateException (如：已出貨不可取消)
@@ -90,6 +113,22 @@ public class OrderController {
 					return ResponseEntity.status(HttpStatus.BAD_REQUEST)
 							.body(new OrderCancelledResource("400", "無法取消訂單: " + ex.getCause().getMessage(), orderId));
 				});
+	}
+
+	/**
+	 * API: 申請退貨
+	 */
+	@PutMapping("/{orderId}/return")
+	public CompletableFuture<ResponseEntity<OrderReturnedResource>> returnOrder(@PathVariable String orderId,
+			@RequestBody ReturnOrderResource resource) {
+
+		log.info("[API] 收到退貨請求: OrderId={}, Version={}", orderId, resource.version());
+
+		ReturnOrderCommand command = new ReturnOrderCommand(orderId, resource.version(), // 傳入版本號進行樂觀鎖比對
+				resource.reason());
+
+		return commandService.returnOrder(command)
+				.thenApply(result -> ResponseEntity.ok(new OrderReturnedResource("200", "訂單退貨成功", orderId)));
 	}
 
 	/**

@@ -1,6 +1,11 @@
 package com.example.demo.application.domain.order.command;
 
 import org.axonframework.modelling.command.TargetAggregateIdentifier;
+import org.axonframework.modelling.command.TargetAggregateVersion;
 
-//由新 API 觸發：代表物流已完成實體出貨
-public record ConfirmOrderShipmentCommand(@TargetAggregateIdentifier String orderId) {}
+/**
+ * ConfirmOrderShipmentCommand - 手動確認出貨指令
+ */
+public record ConfirmOrderShipmentCommand(@TargetAggregateIdentifier String orderId,
+		@TargetAggregateVersion Long version) {
+}

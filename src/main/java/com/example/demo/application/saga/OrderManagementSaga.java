@@ -21,6 +21,8 @@ import com.example.demo.application.domain.order.command.NotifyShipmentCommand;
 import com.example.demo.application.domain.order.event.OrderCancelledEvent;
 import com.example.demo.application.domain.order.event.OrderCreatedEvent;
 import com.example.demo.application.domain.order.event.OrderNotifiedEvent;
+import com.example.demo.application.domain.order.event.OrderReturnedEvent;
+import com.example.demo.application.domain.payment.aggregate.Payment;
 import com.example.demo.application.domain.payment.command.CancelPaymentCommand;
 import com.example.demo.application.domain.payment.command.CreatePaymentCommand;
 import com.example.demo.application.domain.payment.command.RefundPaymentCommand;
@@ -37,16 +39,17 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <p>
  * 本類別採用 Orchestration Saga 模式，負責協調 Order、Product 與 Payment 聚合根之間的分散式事務。
- * 核心流程遵循「資源預留 -> 執行支付 -> 出貨確認」的階段，並具備完整的逆向補償機制。
+ * 整合了「正向訂單流」、「超時自動保護」以及「逆向資源回收 (取消與退貨)」。
  * </p>
  *
- * <h3>核心機制：</h3>
+ * <h3>架構核心：</h3>
  * <ul>
- * <li><b>冪等性防護：</b> 透過 {@code isCancelling} 標記與 {@code synchronized}
- * 鎖，防止併發操作下的重複取消。</li>
- * <li><b>精確補償 (TCC 理念)：</b> 利用 {@code reservedItems}
- * 記錄成功扣減的資源，確保補償時僅還原受影響的庫存。</li>
- * <li><b>生命週期管理：</b> 透過 {@code SagaLifecycle.end()} 確保事務在終點（成功或失敗補償後）正確關閉。</li>
+ * <li><b>冪等性與併發防護：</b> 透過 {@code isCancelling} 標記與 {@code synchronized}
+ * 鎖，防止多重失敗或超時導致的重複指令。</li>
+ * <li><b>樂觀鎖繞過策略：</b> 由 Saga 發起的系統級補償指令將版本號設為
+ * {@code null}，確保任務能跨版本強制執行，保障最終一致性。</li>
+ * <li><b>統一補償模型：</b> 透過 {@code performCompensation}
+ * 方法，將「取消」與「退貨」產生的物理補償邏輯（還原庫存、退款）高度抽象化。</li>
  * </ul>
  */
 @Saga
@@ -62,46 +65,43 @@ public class OrderManagementSaga {
 	private String paymentDeadlineId;
 
 	/**
-	 * 併發防護標記：確保在多品項扣減失敗或超時併發時，取消指令僅發送一次。
+	 * 併發防護標記：防止在極短時間內重複啟動逆向流程（如：超時補償與手動取消同時觸發）。
 	 */
 	private boolean isCancelling = false;
 
 	/**
-	 * 已保留品項清單：用於補償流程。 僅記錄 {@code StockReducedEvent} 成功確認的品項，實現「只還原扣掉的」精確補償。
+	 * 精確補償清單：僅記錄成功扣減的品項，實現「精確還原」而非全量還原。
 	 */
 	private List<OrderItem> reservedItems = new ArrayList<>();
 
+	// ##### 1. 訂單發起與資源預留 (Order Initiation) #####
+
 	/**
-	 * 步驟 1：訂單建立 -> 發起庫存扣減
+	 * 步驟 1：訂單建立 -> 請求庫存扣減
 	 * <p>
-	 * Saga 起點。此階段執行「樂觀預留」，嘗試對所有品項執行庫存扣減。
+	 * 啟動 Saga 事務，預約支付超時任務，並對所有品項發起非同步庫存預留請求。
 	 * </p>
-	 * * @param event 訂單建立事件
-	 * 
-	 * @param commandGateway  用於發送非同步指令
-	 * @param deadlineManager 用於預約支付超時任務
 	 */
 	@StartSaga
 	@SagaEventHandler(associationProperty = "orderId")
 	public void on(OrderCreatedEvent event, CommandGateway commandGateway, DeadlineManager deadlineManager) {
-		log.info("[Saga] 訂單 {} 已建立。開始請求庫存預留 (品項數: {})。", event.orderId(), event.items().size());
+		log.info("[Saga] 訂單 {} 啟動。發起庫存預留與超時監控。", event.orderId());
 
 		this.orderId = event.orderId();
 		this.amount = event.amount();
 
-		// 預約 10 分鐘支付超時任務，逾期將觸發 handlePaymentTimeout
+		// 預約 10 分鐘支付超時任務
 		this.paymentDeadlineId = deadlineManager.schedule(Duration.ofMinutes(10), "payment-deadline", event);
 
-		// 併發發送各品項扣減指令
 		for (OrderItem item : event.items()) {
 			commandGateway.send(new ReduceStockCommand(item.productId(), this.orderId, item.quantity()))
 					.exceptionally(ex -> {
-						// 異常處理：若任一品項失敗，執行原子化的取消標記與指令發送
 						synchronized (this) {
 							if (!isCancelling) {
 								isCancelling = true;
-								log.error("[Saga] 產品 {} 庫存扣減失敗 (原因: {})。啟動訂單取消流程。", item.productId(), ex.getMessage());
-								commandGateway.send(new CancelOrderCommand(this.orderId));
+								log.error("[Saga] 資源預留失敗 (產品: {})。發起自動取消機制。", item.productId());
+								// 💡 系統權威指令：不檢查版本號以確保補償成功
+								commandGateway.send(new CancelOrderCommand(this.orderId, null));
 							}
 						}
 						return null;
@@ -112,109 +112,128 @@ public class OrderManagementSaga {
 	/**
 	 * 步驟 2：庫存扣減成功
 	 * <p>
-	 * 當 Product 聚合根確認庫存充足並扣除後，記錄該品項，並在符合條件下開啟支付流程。
+	 * 記錄成功扣減的資源，並在符合條件下觸發支付模組。
 	 * </p>
 	 */
 	@SagaEventHandler(associationProperty = "orderId")
 	public void on(StockReducedEvent event, CommandGateway commandGateway) {
-		log.info("[Saga] 產品 {} 庫存預留成功 (OrderId: {})。", event.productId(), event.orderId());
-
-		// 將成功扣減的品項加入補償清單
+		log.info("[Saga] 產品 {} 庫存預留成功。", event.productId());
 		this.reservedItems.add(new OrderItem(event.productId(), event.quantity(), BigDecimal.ZERO));
 
-		// 支付發起檢查：
-		// 1. 若尚未建立過支付紀錄 (避免多品項重複觸發)
-		// 2. 且目前不在取消流程中
 		synchronized (this) {
 			if (this.paymentId == null && !isCancelling) {
 				this.paymentId = UUID.randomUUID().toString();
 				SagaLifecycle.associateWith("paymentId", this.paymentId);
-
-				log.info("[Saga] 所有初始條件達成，建立支付請求: {}", this.paymentId);
 				commandGateway.send(new CreatePaymentCommand(this.paymentId, this.orderId, this.amount));
 			}
 		}
 	}
 
+	// ##### 2. 支付與結案 (Payment & Completion) #####
+
 	/**
-	 * 步驟 3：支付完成
+	 * 步驟 3：支付成功處理
 	 * <p>
-	 * 支付模組成功處理扣款後，取消超時倒數並通知出貨端。
+	 * 關閉超時倒數，並通知 Order 聚合根進入出貨準備階段 (NOTIFIED)。
 	 * </p>
 	 */
 	@SagaEventHandler(associationProperty = "paymentId")
 	public void on(PaymentProcessedEvent event, CommandGateway commandGateway, DeadlineManager deadlineManager) {
-		log.info("[Saga] 支付成功確認！關閉超時監控。OrderId: {}", event.orderId());
+		log.info("[Saga] 支付成功確認。OrderId: {}", event.orderId());
 		this.paymentCompleted = true;
 
-		// 取消支付超時任務，避免訂單在付款後被意外取消
 		if (this.paymentDeadlineId != null) {
 			deadlineManager.cancelSchedule("payment-deadline", this.paymentDeadlineId);
 		}
-
-		// 通知出貨模組 (Order Aggregate 狀態機轉跳)
 		commandGateway.send(new NotifyShipmentCommand(event.orderId()));
 	}
 
 	/**
-	 * 步驟 4：補償機制 (由 OrderCancelledEvent 觸發)
+	 * 流程終點：通知出貨已發出
 	 * <p>
-	 * 本方法是 Saga 的防線，負責清理所有已佔用的資源（庫存、金額）。
+	 * 正向流程結束點，回收 Saga 資源。
+	 * </p>
+	 */
+	@SagaEventHandler(associationProperty = "orderId")
+	public void on(OrderNotifiedEvent event) {
+		log.info("[Saga] 訂單 {} 流程成功結束，歸檔 Saga。", event.orderId());
+//		SagaLifecycle.end();
+	}
+
+	// ##### 3. 逆向流程與資源回收 (Inverse Flow & Compensation) #####
+
+	/**
+	 * 步驟 4：處理訂單取消事件
+	 * <p>
+	 * 因應使用者取消或系統失敗，執行物理補償邏輯並結束 Saga。
 	 * </p>
 	 */
 	@SagaEventHandler(associationProperty = "orderId")
 	public void on(OrderCancelledEvent event, CommandGateway commandGateway) {
-		log.warn("[Saga] 訂單 {} 進入取消程序，開始執行資源回收 (Compensation)。", event.orderId());
-
-		this.isCancelling = true;
-
-		// 1. 庫存補償：還原所有在 reservedItems 中記錄的成功扣減
-		if (!reservedItems.isEmpty()) {
-			for (OrderItem item : reservedItems) {
-				log.info("[Saga] 補償：還原產品 {} 的庫存 {} 單位。", item.productId(), item.quantity());
-				commandGateway.send(new AddStockCommand(item.productId(), this.orderId, item.quantity()));
-			}
-		}
-
-		// 2. 支付補償：根據支付狀態執行「退款」或「關閉紀錄」
-		if (this.paymentId != null) {
-			if (this.paymentCompleted) {
-				log.info("[Saga] 補償：訂單已支付，發起退款請求 (PaymentId: {})。", this.paymentId);
-				commandGateway.send(new RefundPaymentCommand(this.paymentId, this.orderId, this.amount));
-			} else {
-				log.info("[Saga] 補償：關閉未支付之紀錄 (PaymentId: {})。", this.paymentId);
-				commandGateway.send(new CancelPaymentCommand(this.paymentId, this.orderId));
-			}
-		}
-
-		// 事務結束：從記憶體中清除此 Saga 實例
+		log.warn("[Saga] 訂單 {} 已取消，啟動資源補償流程...", event.orderId());
+		performCompensation(commandGateway);
 		SagaLifecycle.end();
 	}
 
 	/**
+	 * 步驟 5：處理退貨流程事件
+	 * <p>
+	 * 當訂單狀態轉為 RETURNED 時，啟動逆向物流處理。 本方法連動 {@link Payment} 聚合根執行退款動作。
+	 * </p>
+	 */
+	@SagaEventHandler(associationProperty = "orderId")
+	public void on(OrderReturnedEvent event, CommandGateway commandGateway) {
+		log.warn("[Saga] 訂單 {} 已進入退貨程序，啟動自動化退款與庫存回撥...", event.orderId());
+		performCompensation(commandGateway);
+		SagaLifecycle.end();
+	}
+
+	/**
+	 * 統一資源補償邏輯實作 (DRY)
+	 * <p>
+	 * 此為私有核心方法，負責執行「庫存加回」與「資金原路退回」的物理指令發送。 確保了取消與退貨在資源回收面上的一致性。
+	 * </p>
+	 */
+	private void performCompensation(CommandGateway commandGateway) {
+		this.isCancelling = true;
+
+		// 1. 庫存補償：精確還原
+		if (!reservedItems.isEmpty()) {
+			for (OrderItem item : reservedItems) {
+				log.info("[Saga] 補償：還原產品 {} 之庫存 (數量: {})", item.productId(), item.quantity());
+				commandGateway.send(new AddStockCommand(item.productId(), this.orderId, item.quantity()));
+			}
+		}
+
+		// 2. 金流補償：退款或關閉
+		if (this.paymentId != null) {
+			if (this.paymentCompleted) {
+				log.info("[Saga] 補償：已支付，發送退款指令 (PaymentId: {}, Status: REFUNDED)", this.paymentId);
+				commandGateway.send(new RefundPaymentCommand(this.paymentId, this.orderId, this.amount));
+			} else {
+				log.info("[Saga] 補償：未支付，發送關閉指令 (PaymentId: {}, Status: CANCELLED)", this.paymentId);
+				commandGateway.send(new CancelPaymentCommand(this.paymentId, this.orderId));
+			}
+		}
+	}
+
+	// ##### 4. 監控與超時 (Monitoring & Timeout) #####
+
+	/**
 	 * 支付超時處理器
 	 * <p>
-	 * 當用戶未在預定時間內完成支付時由 DeadlineManager 觸發。
+	 * 當用戶超時未付，強制觸發系統級取消，無視當前版本號。
 	 * </p>
 	 */
 	@DeadlineHandler(deadlineName = "payment-deadline")
 	public void handlePaymentTimeout(OrderCreatedEvent event, CommandGateway commandGateway) {
 		synchronized (this) {
-			// 防禦校驗：僅在未支付且未在取消中的狀態下執行超時取消
 			if (!isCancelling && !paymentCompleted) {
 				this.isCancelling = true;
-				log.warn("[Saga] 偵測到支付超時，系統自動發起訂單取消。OrderId: {}", event.orderId());
-				commandGateway.send(new CancelOrderCommand(this.orderId));
+				log.warn("[Saga] 支付超時 (OrderId: {})。系統強制執行取消操作。", event.orderId());
+				// 💡 系統強制指令：傳入 null version
+				commandGateway.send(new CancelOrderCommand(this.orderId, null));
 			}
 		}
-	}
-
-	/**
-	 * 流程終點：通知出貨成功
-	 */
-	@SagaEventHandler(associationProperty = "orderId")
-	public void on(OrderNotifiedEvent event) {
-		log.info("[Saga] 訂單 {} 流程圓滿結束，歸檔 Saga。", event.orderId());
-		SagaLifecycle.end();
 	}
 }

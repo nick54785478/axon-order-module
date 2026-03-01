@@ -4,5 +4,6 @@ public enum OrderStatus {
 	CREATED, // 訂單已建立
 	NOTIFIED, // 已通知出貨 (已付款)
 	SHIPPED, // 已出貨 (人工觸發)
+	RETURNED, // 退貨
 	CANCELLED // 已取消
 }

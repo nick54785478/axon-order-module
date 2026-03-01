@@ -9,6 +9,7 @@ import com.example.demo.application.domain.order.aggregate.Order;
 import com.example.demo.application.domain.order.command.CancelOrderCommand;
 import com.example.demo.application.domain.order.command.ConfirmOrderShipmentCommand;
 import com.example.demo.application.domain.order.command.CreateOrderCommand;
+import com.example.demo.application.domain.order.command.ReturnOrderCommand;
 
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -70,9 +71,18 @@ public class OrderCommandService {
 	 * 
 	 * @return CompletableFuture&lt;Void&gt;
 	 */
-	public CompletableFuture<Void> cancelOrder(String orderId) {
-		log.info("[Order Service] 執行訂單取消指令: {}", orderId);
+	public CompletableFuture<Void> cancelOrder(CancelOrderCommand command) {
+		log.info("[Order Service] 執行訂單取消指令: {}", command.orderId());
 
-		return commandGateway.send(new CancelOrderCommand(orderId));
+		return commandGateway.send(command);
+	}
+
+	/**
+	 * 申請退貨
+	 */
+	public CompletableFuture<Void> returnOrder(ReturnOrderCommand command) {
+		log.info("[API] 收到退貨請求: OrderId={}, Version={}", command.orderId(), command.version());
+
+		return commandGateway.send(command);
 	}
 }
