@@ -7,11 +7,11 @@ import org.axonframework.messaging.responsetypes.ResponseTypes;
 import org.axonframework.queryhandling.QueryGateway;
 import org.springframework.stereotype.Service;
 
+import com.example.demo.application.domain.order.query.FindAllOrdersQuery;
+import com.example.demo.application.domain.order.query.GetOrderQuery;
 import com.example.demo.application.shared.dto.OrderQueriedView;
 import com.example.demo.application.shared.dto.PaymentQueriedView;
-import com.example.demo.application.shared.query.FindAllOrdersQuery;
 import com.example.demo.application.shared.query.GetOrderPaymentsQuery;
-import com.example.demo.application.shared.query.GetOrderQuery;
 
 import lombok.RequiredArgsConstructor;
 

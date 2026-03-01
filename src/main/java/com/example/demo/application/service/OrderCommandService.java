@@ -62,7 +62,7 @@ public class OrderCommandService {
 	}
 
 	/**
-	 * 撤銷/取消特定訂單 *
+	 * 撤銷/取消特定訂單
 	 * <p>
 	 * 發送取消指令。若訂單已進入出貨階段，Aggregate 內部會拋出 IllegalStateException 阻止取消。
 	 * </p>

@@ -1,4 +1,4 @@
-package com.example.demo.application.shared.query;
+package com.example.demo.application.domain.product.query;
 
 /**
  * GetProductQuery - 取得特定產品詳細資訊

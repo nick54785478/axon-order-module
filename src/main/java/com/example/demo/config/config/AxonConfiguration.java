@@ -70,7 +70,9 @@ public class AxonConfiguration {
 		return new EventCountSnapshotTriggerDefinition(snapshotter, 100);
 	}
 
-	// 配置 DeadlineManager
+	/**
+	 * 配置 DeadlineManager
+	 */
 	@Bean
 	public DeadlineManager deadlineManager(org.axonframework.common.transaction.TransactionManager transactionManager,
 			org.axonframework.config.Configuration configuration) {

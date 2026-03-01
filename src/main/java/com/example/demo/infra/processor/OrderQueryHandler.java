@@ -5,11 +5,11 @@ import java.util.List;
 import org.axonframework.queryhandling.QueryHandler;
 import org.springframework.stereotype.Component;
 
+import com.example.demo.application.domain.order.query.FindAllOrdersQuery;
+import com.example.demo.application.domain.order.query.GetOrderQuery;
 import com.example.demo.application.shared.dto.OrderQueriedView;
 import com.example.demo.application.shared.dto.PaymentQueriedView;
-import com.example.demo.application.shared.query.FindAllOrdersQuery;
 import com.example.demo.application.shared.query.GetOrderPaymentsQuery;
-import com.example.demo.application.shared.query.GetOrderQuery;
 import com.example.demo.infra.mapper.OrderMapper;
 import com.example.demo.infra.mapper.PaymentMapper;
 import com.example.demo.infra.persistence.OrderViewRepository;

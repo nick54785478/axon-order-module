@@ -5,9 +5,9 @@ import java.util.List;
 import org.axonframework.queryhandling.QueryHandler;
 import org.springframework.stereotype.Component;
 
+import com.example.demo.application.domain.product.query.FindAllProductsQuery;
+import com.example.demo.application.domain.product.query.GetProductQuery;
 import com.example.demo.application.shared.dto.ProductQueriedView;
-import com.example.demo.application.shared.query.FindAllProductsQuery;
-import com.example.demo.application.shared.query.GetProductQuery;
 import com.example.demo.infra.mapper.ProductMapper;
 import com.example.demo.infra.persistence.ProductViewRepository;
 

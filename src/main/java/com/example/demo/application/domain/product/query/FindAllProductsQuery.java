@@ -1,4 +1,4 @@
-package com.example.demo.application.shared.query;
+package com.example.demo.application.domain.product.query;
 
 /**
  * FindAllProductsQuery - 獲取所有產品清單

@@ -15,11 +15,11 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.example.demo.application.domain.order.command.ConfirmOrderShipmentCommand;
 import com.example.demo.application.domain.order.command.CreateOrderCommand;
+import com.example.demo.application.domain.order.query.FindAllOrdersQuery;
+import com.example.demo.application.domain.order.query.GetOrderQuery;
 import com.example.demo.application.service.OrderCommandService;
 import com.example.demo.application.service.OrderQueryService;
-import com.example.demo.application.shared.query.FindAllOrdersQuery;
 import com.example.demo.application.shared.query.GetOrderPaymentsQuery;
-import com.example.demo.application.shared.query.GetOrderQuery;
 import com.example.demo.iface.dto.req.CreateOrderResource;
 import com.example.demo.iface.dto.res.OrderCancelledResource;
 import com.example.demo.iface.dto.res.OrderCreatedResource;
