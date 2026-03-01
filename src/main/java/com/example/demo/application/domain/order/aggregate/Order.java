@@ -224,7 +224,8 @@ public class Order {
 			throw new IllegalStateException("已出貨訂單具備法律效力或物流成本，不可隨意取消");
 		}
 		if (this.status == OrderStatus.CANCELLED) {
-			throw new IllegalStateException("訂單早已是取消狀態");
+			log.warn("[Order] 訂單 {} 已經是取消狀態，忽略重複的取消指令。", command.orderId());
+			return;
 		}
 
 		AggregateLifecycle.apply(new OrderCancelledEvent(command.orderId()));

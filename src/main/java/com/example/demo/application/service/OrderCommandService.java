@@ -28,7 +28,7 @@ public class OrderCommandService {
 	private final CommandGateway commandGateway;
 
 	/**
-	 * 建立新訂單 *
+	 * 建立新訂單
 	 * <p>
 	 * 此為訂單生命週期的起點。發送指令後，{@link Order} 聚合根會執行金額校驗。
 	 * </p>
@@ -47,7 +47,7 @@ public class OrderCommandService {
 	}
 
 	/**
-	 * 手動確認訂單出貨 *
+	 * 手動確認訂單出貨
 	 * <p>
 	 * 由管理人員透過 API 手動觸發。此操作僅在訂單處於「已通知出貨 (NOTIFIED)」狀態下有效。
 	 * </p>

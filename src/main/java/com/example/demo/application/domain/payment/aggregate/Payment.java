@@ -1,5 +1,7 @@
 package com.example.demo.application.domain.payment.aggregate;
 
+import java.math.BigDecimal;
+
 import org.axonframework.commandhandling.CommandHandler;
 import org.axonframework.eventsourcing.EventSourcingHandler;
 import org.axonframework.modelling.command.AggregateIdentifier;
@@ -14,6 +16,7 @@ import com.example.demo.application.domain.payment.event.PaymentCancelledEvent;
 import com.example.demo.application.domain.payment.event.PaymentCreatedEvent;
 import com.example.demo.application.domain.payment.event.PaymentProcessedEvent;
 import com.example.demo.application.domain.payment.event.PaymentRefundedEvent;
+import com.example.demo.application.shared.exception.InsufficientFundsException;
 
 import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
@@ -36,145 +39,85 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 @Aggregate
-@NoArgsConstructor // Axon 框架重建聚合根所需
+@NoArgsConstructor
 @AllArgsConstructor
 public class Payment {
 
-	/**
-	 * 支付唯一識別碼
-	 * <p>
-	 * 對應資料庫中的支付主鍵，亦為 Axon 指令路由的基準。
-	 * </p>
-	 */
 	@AggregateIdentifier
 	private String paymentId;
 
-	/**
-	 * 支付狀態
-	 * <p>
-	 * 可選值：CREATED (已建立), PROCESSED (已支付), CANCELLED (已取消), REFUNDED (已退款)。
-	 * </p>
-	 * <p>
-	 * 註：實務上建議使用 Enum 以提升類型安全性。
-	 * </p>
-	 */
 	private String status;
 
-	// ##### 1. 建立階段 (Initialization) #####
+	/** 支付金額：用於扣款時的金額一致性校驗 */
+	private BigDecimal amount;
 
-	/**
-	 * 【Constructor Command Handler】建立支付紀錄
-	 * <p>
-	 * 當系統接收到支付請求時，初始化支付生命週期。
-	 * </p>
-	 * * @param command 包含支付 ID、訂單 ID 與金額的指令
-	 */
+	// ##### 1. 建立階段 #####
+
 	@CommandHandler
 	public Payment(CreatePaymentCommand command) {
-		log.info("[Payment] 接收到 CreatePaymentCommand，ID: {}", command.paymentId());
-
-		// 發布事實：支付紀錄已初始化
+		log.info("[Payment] 建立支付紀錄，金額: {}", command.amount());
 		AggregateLifecycle.apply(new PaymentCreatedEvent(command.paymentId(), command.orderId(), command.amount()));
 	}
 
-	/**
-	 * 響應支付建立事件
-	 */
 	@EventSourcingHandler
 	public void on(PaymentCreatedEvent event) {
 		this.paymentId = event.paymentId();
-		this.status = "CREATED"; // 初始狀態
+		this.amount = event.amount(); // 關鍵：記錄下這筆支付應扣多少錢
+		this.status = "CREATED";
 	}
 
-	// ##### 2. 扣款階段 (Execution) #####
+	// ##### 2. 扣款階段 (整合校驗邏輯) #####
 
-	/**
-	 * 【Command Handler】執行支付扣款
-	 * <p>
-	 * 此為金流變動的關鍵動作。必須確保紀錄處於 CREATED 狀態，避免重複扣款或對已失效的紀錄扣款。
-	 * </p>
-	 * 
-	 * @param command 執行支付指令
-	 * 
-	 * @throws IllegalStateException 若目前狀態不允許執行支付 (如已取消或已完成)
-	 */
 	@CommandHandler
 	public void handle(ProcessPaymentCommand command) {
-		log.info("[Payment] 執行支付扣款，ID: {}", command.paymentId());
+		log.info("[Payment] 執行支付扣款校驗: {}", command.paymentId());
 
-		// 核心業務校驗：狀態檢查
+		// 防線 1：狀態檢查
 		if (!"CREATED".equals(this.status)) {
-			throw new IllegalStateException("無法執行支付：目前狀態為 " + this.status + "，僅能處理 CREATED 狀態的紀錄");
+			throw new IllegalStateException("無法執行支付：目前狀態為 " + this.status);
 		}
 
-		// 模擬扣款邏輯通過後，發布支付成功事實
+		// 防線 2：金額一致性校驗 (防止前端或外部惡意竄改支付金額)
+		if (this.amount.compareTo(command.amount()) != 0) {
+			log.error("[Payment] 金額不符！預期: {}, 實際: {}", this.amount, command.amount());
+			throw new IllegalArgumentException("支付失敗：交易金額與紀錄不符");
+		}
+
+		// 防線 3：餘額校驗 (模擬業務規則)
+		// 這裡模擬：如果單筆支付超過 100,000 元，則判定為餘額不足
+		if (command.amount().compareTo(new BigDecimal("100000")) > 0) {
+			throw new InsufficientFundsException("支付失敗：餘額不足 (單筆限額 10 萬)");
+		}
+
 		AggregateLifecycle.apply(new PaymentProcessedEvent(command.paymentId(), command.orderId(), command.amount()));
 	}
 
-	/**
-	 * 響應支付成功事件
-	 */
 	@EventSourcingHandler
 	public void on(PaymentProcessedEvent event) {
 		this.status = "PROCESSED";
 	}
 
-	// ##### 3. 取消與補償階段 (Compensation) #####
+	// ##### 3. 取消與退款 (保持原樣) #####
 
-	/**
-	 * 【Command Handler】取消支付紀錄
-	 * <p>
-	 * 通常由 Saga 流程因訂單超時或手動撤單而觸發。
-	 * </p>
-	 * 
-	 * @param command 取消支付指令
-	 */
 	@CommandHandler
 	public void handle(CancelPaymentCommand command) {
-		log.info("[Payment] 嘗試取消支付紀錄: {}", command.paymentId());
-
-		// 冪等性與狀態守護：若已支付完成，則不可直接「取消」，應由後續「退款」流程處理
-		if ("PROCESSED".equals(this.status)) {
-			log.warn("[Payment] 支付 ID {} 已完成付款，忽略取消指令 (應走退款流程)。", command.paymentId());
+		if ("PROCESSED".equals(this.status))
 			return;
-		}
-
 		AggregateLifecycle.apply(new PaymentCancelledEvent(command.paymentId(), command.orderId()));
 	}
 
-	/**
-	 * 響應取消事件
-	 */
 	@EventSourcingHandler
 	public void on(PaymentCancelledEvent event) {
 		this.status = "CANCELLED";
 	}
 
-	/**
-	 * 【Command Handler】執行退款
-	 * <p>
-	 * 用於處理已支付完成後的逆向物流或售後流程。
-	 * </p>
-	 * 
-	 * @param command 退款指令
-	 * 
-	 * @throws IllegalStateException 若尚未支付成功則無法退款
-	 */
 	@CommandHandler
 	public void handle(RefundPaymentCommand command) {
-		log.info("[Payment] 處理退款請求: {}", command.paymentId());
-
-		// 業務校驗：只有已成功的支付可以退款
-		if (!"PROCESSED".equals(this.status)) {
-			throw new IllegalStateException("無法退款：該紀錄尚未支付完成 (目前狀態: " + this.status + ")");
-		}
-
+		if (!"PROCESSED".equals(this.status))
+			throw new IllegalStateException("未支付不可退款");
 		AggregateLifecycle.apply(new PaymentRefundedEvent(command.paymentId(), command.orderId(), command.amount()));
 	}
 
-	/**
-	 * 響應退款事件
-	 */
 	@EventSourcingHandler
 	public void on(PaymentRefundedEvent event) {
 		this.status = "REFUNDED";

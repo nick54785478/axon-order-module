@@ -51,7 +51,6 @@ public class OrderController {
 		// 利用我們之前在 Command Record 寫的邏輯：若沒傳 ID 就自動產生
 		CreateOrderCommand command = orderMapper.transformACL(resource);
 		String orderId = command.orderId(); // 從 Command 拿 ID，確保一致性
-
 		return commandService.createOrder(command).thenApply(result -> ResponseEntity.status(HttpStatus.CREATED)
 				.body(new OrderCreatedResource("200", "建立訂單成功", orderId))).exceptionally(ex -> {
 					log.error("[API] 建立訂單失敗: {}", ex.getMessage());

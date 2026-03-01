@@ -2,6 +2,8 @@ package com.example.demo.application.saga;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import org.axonframework.commandhandling.gateway.CommandGateway;
@@ -13,6 +15,7 @@ import org.axonframework.modelling.saga.SagaLifecycle;
 import org.axonframework.modelling.saga.StartSaga;
 import org.axonframework.spring.stereotype.Saga;
 
+import com.example.demo.application.domain.order.aggregate.vo.OrderItem;
 import com.example.demo.application.domain.order.command.CancelOrderCommand;
 import com.example.demo.application.domain.order.command.NotifyShipmentCommand;
 import com.example.demo.application.domain.order.event.OrderCancelledEvent;
@@ -22,19 +25,18 @@ import com.example.demo.application.domain.payment.command.CancelPaymentCommand;
 import com.example.demo.application.domain.payment.command.CreatePaymentCommand;
 import com.example.demo.application.domain.payment.command.RefundPaymentCommand;
 import com.example.demo.application.domain.payment.event.PaymentProcessedEvent;
+import com.example.demo.application.domain.product.command.ReduceStockCommand;
+import com.example.demo.application.domain.product.event.StockReducedEvent;
+import com.example.demo.application.shared.command.AddStockCommand;
 
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
  * OrderManagementSaga - 訂單管理流程協調者
- * 
- * <pre>
- * 採用 Orchestration Saga 模式，負責協調 Order 與 Payment 聚合根之間的業務流程。 具備以下特性： 
- * 1. 狀態持久化：成員變數會自動存入 saga_entry 供後續流程使用。 
- * 2. 支付超時管理：利用 DeadlineManager 實作支付倒數計時。 
- * 3. 補償邏輯：當訂單取消時，確保支付紀錄同步關閉或退款。
- * </pre>
+ * <p>
+ * 整合了 isCancelling 旗標與 synchronized 鎖，確保在多品項扣減失敗或併發超時情況下， 僅會發送一次取消指令，維護系統的冪等性。
+ * </p>
  */
 @Saga
 @Slf4j
@@ -42,131 +44,134 @@ import lombok.extern.slf4j.Slf4j;
 @ProcessingGroup("order-saga")
 public class OrderManagementSaga {
 
-	/**
-	 * 支付關聯 ID
-	 */
 	private String paymentId;
-
-	/**
-	 * 訂單金額，用於後續退款補償
-	 */
 	private BigDecimal amount;
-
-	/**
-	 * 付款完成旗標
-	 */
+	private String orderId;
 	private boolean paymentCompleted = false;
-
-	/**
-	 * 超時任務 ID，用於支付成功後取消任務
-	 */
 	private String paymentDeadlineId;
 
 	/**
-	 * 步驟 1：訂單建立 (Saga 起點)
-	 * 
-	 * @param event           訂單建立事件
-	 * @param commandGateway  用於發送 CreatePaymentCommand
-	 * @param deadlineManager 用於預約支付超時任務
+	 * 關鍵旗標：防止重複觸發取消流程
+	 */
+	private boolean isCancelling = false;
+
+	/**
+	 * 追蹤真正成功保留的品項，確保補償精確度
+	 */
+	private List<OrderItem> reservedItems = new ArrayList<>();
+
+	/**
+	 * 步驟 1：訂單建立 -> 發起庫存扣減
 	 */
 	@StartSaga
 	@SagaEventHandler(associationProperty = "orderId")
 	public void on(OrderCreatedEvent event, CommandGateway commandGateway, DeadlineManager deadlineManager) {
-		log.info("[Saga] 訂單 {} 建立，開始 10 分鐘支付倒數。", event.orderId());
+		log.info("[Saga] 訂單 {} 已建立。開始請求扣減庫存。", event.orderId());
 
+		this.orderId = event.orderId();
 		this.amount = event.amount();
-		this.paymentId = UUID.randomUUID().toString();
 
-		// 建立與 paymentId 的關聯，以便此 Saga 能接收來自 Payment 模組的事件
-		SagaLifecycle.associateWith("paymentId", this.paymentId);
-
-		// 預約支付超時任務 (10 分鐘)
-		// 將 event 作為 Payload 傳遞給 DeadlineHandler
+		// 預約支付超時任務
 		this.paymentDeadlineId = deadlineManager.schedule(Duration.ofMinutes(10), "payment-deadline", event);
 
-		// 建立付款紀錄 (狀態為 CREATED)，等待使用者手動執行支付 API
-		commandGateway.send(new CreatePaymentCommand(this.paymentId, event.orderId(), event.amount()))
-				.exceptionally(ex -> {
-					log.error("[Saga] 建立付款紀錄失敗，執行補償：取消訂單。原因: {}", ex.getMessage());
-					commandGateway.send(new CancelOrderCommand(event.orderId()));
-					return null;
-				});
+		// 遍歷品項發送指令
+		for (OrderItem item : event.items()) {
+			commandGateway.send(new ReduceStockCommand(item.productId(), this.orderId, item.quantity()))
+					.exceptionally(ex -> {
+						// 使用 synchronized 確保檢查與標記 flag 是原子操作
+						synchronized (this) {
+							if (!isCancelling) {
+								isCancelling = true;
+								log.error("[Saga] 產品 {} 扣減失敗 (原因: {})。發起唯一一次取消指令。", item.productId(), ex.getMessage());
+								commandGateway.send(new CancelOrderCommand(this.orderId));
+							}
+						}
+						return null;
+					});
+		}
 	}
 
 	/**
-	 * 步驟 2：外部觸發支付成功
-	 * 
-	 * @param event           支付完成事件 (由使用者調用支付 API 觸發)
-	 * @param commandGateway  用於發送出貨通知
-	 * @param deadlineManager 用於取消支付超時任務
+	 * 步驟 2：庫存扣減成功
+	 */
+	@SagaEventHandler(associationProperty = "orderId")
+	public void on(StockReducedEvent event, CommandGateway commandGateway) {
+		log.info("[Saga] 產品 {} 庫存保留成功。", event.productId());
+
+		// 即使正在取消中，若收到成功的事件也要記錄，以便後續 Cancel 事件能將其還原
+		this.reservedItems.add(new OrderItem(event.productId(), event.quantity(), BigDecimal.ZERO));
+
+		// 如果尚未啟動支付且「非取消中」，則啟動支付流程
+		synchronized (this) {
+			if (this.paymentId == null && !isCancelling) {
+				this.paymentId = UUID.randomUUID().toString();
+				SagaLifecycle.associateWith("paymentId", this.paymentId);
+				commandGateway.send(new CreatePaymentCommand(this.paymentId, this.orderId, this.amount));
+			}
+		}
+	}
+
+	/**
+	 * 步驟 3：支付完成
 	 */
 	@SagaEventHandler(associationProperty = "paymentId")
 	public void on(PaymentProcessedEvent event, CommandGateway commandGateway, DeadlineManager deadlineManager) {
-		log.info("[Saga] 偵測到支付成功！取消倒數並通知出貨。OrderId: {}", event.orderId());
-
+		log.info("[Saga] 支付成功！OrderId: {}", event.orderId());
 		this.paymentCompleted = true;
 
-		// 取消之前預約的支付超時任務
 		if (this.paymentDeadlineId != null) {
 			deadlineManager.cancelSchedule("payment-deadline", this.paymentDeadlineId);
-			this.paymentDeadlineId = null;
 		}
-
-		// 流程推進：通知出貨 (進入 NOTIFIED 狀態)
-		commandGateway.send(new NotifyShipmentCommand(event.orderId())).exceptionally(ex -> {
-			log.error("[Saga] 通知出貨失敗，執行退款補償。");
-			commandGateway.send(new RefundPaymentCommand(event.paymentId(), event.orderId(), event.amount()));
-			return null;
-		});
+		commandGateway.send(new NotifyShipmentCommand(event.orderId()));
 	}
 
 	/**
-	 * 支付超時處理器 (Deadline Handler)
-	 * 
-	 * @param event          原始建立訂單事件
-	 * @param commandGateway 用於執行超時取消
-	 */
-	@DeadlineHandler(deadlineName = "payment-deadline")
-	public void handlePaymentTimeout(OrderCreatedEvent event, CommandGateway commandGateway) {
-		log.warn("[Saga] 支付超時時間到！自動發送取消訂單指令。OrderId: {}", event.orderId());
-		// 觸發取消訂單，這會導致 Order 產生 OrderCancelledEvent
-		commandGateway.send(new CancelOrderCommand(event.orderId()));
-	}
-
-	/**
-	 * 步驟 5：訂單取消處理 (手動或超時觸發)
-	 * 
-	 * @param event          訂單取消事件
-	 * @param commandGateway 用於執行支付關閉或退款
+	 * 步驟 4：補償機制 (由 OrderCancelledEvent 觸發)
 	 */
 	@SagaEventHandler(associationProperty = "orderId")
 	public void on(OrderCancelledEvent event, CommandGateway commandGateway) {
-		log.info("[Saga] 收到 OrderCancelledEvent，同步更新支付狀態。OrderId: {}", event.orderId());
+		log.warn("[Saga] 偵測到訂單 {} 已取消，執行資源回收...", event.orderId());
 
-		// 防禦邏輯 1：如果訂單未付錢即取消，同步關閉支付紀錄，防止過期支付
-		if (!this.paymentCompleted && this.paymentId != null) {
-			log.info("[Saga] 關閉支付紀錄: {}", this.paymentId);
-			commandGateway.send(new CancelPaymentCommand(this.paymentId, event.orderId()));
+		// 確保 isCancelling 為 true，防止後續其他異常再度觸發
+		this.isCancelling = true;
+
+		// 1. 精確還原已扣除的庫存
+		if (!reservedItems.isEmpty()) {
+			for (OrderItem item : reservedItems) {
+				log.info("[Saga] 補償：還原產品 {} 庫存", item.productId());
+				commandGateway.send(new AddStockCommand(item.productId(), this.orderId, item.quantity()));
+			}
 		}
 
-		// 防禦邏輯 2：如果訂單已付錢但被取消，則執行退款
-		if (this.paymentCompleted) {
-			log.warn("[Saga] 訂單已付款但被取消，執行退款流程。PaymentId: {}", this.paymentId);
-			commandGateway.send(new RefundPaymentCommand(this.paymentId, event.orderId(), this.amount));
+		// 2. 處理支付狀態 (退款或關閉)
+		if (this.paymentId != null) {
+			if (this.paymentCompleted) {
+				commandGateway.send(new RefundPaymentCommand(this.paymentId, this.orderId, this.amount));
+			} else {
+				commandGateway.send(new CancelPaymentCommand(this.paymentId, this.orderId));
+			}
 		}
 
-		// 流程結束
 		SagaLifecycle.end();
 	}
 
 	/**
-	 * 流程終點：成功通知出貨
-	 * 
-	 * @param event 訂單通知事件
+	 * 支付超時處理 (Deadline)
 	 */
+	@DeadlineHandler(deadlineName = "payment-deadline")
+	public void handlePaymentTimeout(OrderCreatedEvent event, CommandGateway commandGateway) {
+		synchronized (this) {
+			if (!isCancelling && !paymentCompleted) {
+				this.isCancelling = true;
+				log.warn("[Saga] 支付超時！發起自動取消。OrderId: {}", event.orderId());
+				commandGateway.send(new CancelOrderCommand(this.orderId));
+			}
+		}
+	}
+
 	@SagaEventHandler(associationProperty = "orderId")
 	public void on(OrderNotifiedEvent event) {
-		log.info("[Saga] 訂單 {} 已成功通知出貨，流程結束。", event.orderId());
+		log.info("[Saga] 訂單流程圓滿結束。");
 		SagaLifecycle.end();
 	}
 }
