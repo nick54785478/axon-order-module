@@ -24,15 +24,15 @@ import lombok.extern.slf4j.Slf4j;
  * ProductQueryHandler - 產品查詢處理器
  *
  * <p>
- * 此類別屬於 Infrastructure Layer (Driven Adapter)，負責實作產品相關的查詢邏輯。 透過監聽 Query Bus
- * 上的訊息，從 MySQL 讀取模型 (ProductView) 中檢索資料。
+ * 此類別作為 CQRS 架構中的查詢端適配器（Query Adapter），負責處理路由在 Query Bus 上的查詢請求。 透過串接
+ * {@link ProductViewRepository}，從物理資料庫檢索投影後的產品數據（ProductView）。
  * </p>
  *
- * <h3>設計細節：</h3>
+ * <h3>核心特點：</h3>
  * <ul>
- * <li><b>DTO 轉換：</b> 延續我們在訂單模組的優化策略，在此層級直接將 JPA Entity 轉換為 DTO， 確保跨網絡傳輸時不會觸發
- * Hibernate 的延遲加載異常。</li>
- * <li><b>非同步支持：</b> 配合 QueryGateway，提供高效的唯讀資料存取。</li>
+ * <li><b>領域隔離：</b> 嚴格執行實體（Entity）與 DTO（QueriedView）的轉換，防止讀取模型變更影響外部介面。</li>
+ * <li><b>效能優化：</b> 採用 {@link Pageable} 實作資料庫層級的分頁，避免大數據量下記憶體溢出的風險。</li>
+ * <li><b>解耦查詢：</b> 透過 Axon Query Bus 實現 API 與查詢邏輯的非同步解耦。</li>
  * </ul>
  */
 @Slf4j
@@ -45,48 +45,63 @@ public class ProductQueryHandler {
 
 	/**
 	 * 處理「查詢所有產品」請求
+	 * <p>
+	 * 用於後台管理或全量產品同步場景。將資料庫中所有的產品視圖實體批次轉換為 DTO。
+	 * </p>
 	 *
 	 * @param query 查詢所有產品的意圖訊息 (FindAllProductsQuery)
-	 * @return 轉換後的產品 DTO 清單
+	 * @return 轉換後的產品 DTO 清單 (List of ProductQueriedView)
 	 */
 	@QueryHandler
 	public List<ProductQueriedView> handle(FindAllProductsQuery query) {
-		log.info("[Query] 處理 FindAllProductsQuery，檢索產品清單。");
+		log.info("[Query] 處理 FindAllProductsQuery，執行全量產品檢索。");
 
-		return repository.findAll().stream().map(mapper::toQueriedView) // 在此處進行 DTO 映射
-				.toList();
+		// 透過 Stream API 進行平滑的 DTO 映射轉換
+		return repository.findAll().stream().map(mapper::toQueriedView).toList();
 	}
 
 	/**
 	 * 處理「根據 ID 查詢特定產品」請求
+	 * <p>
+	 * 供產品詳情頁使用。若找不到對應產品，則回傳 null（Axon 會自動封裝為 Optional 的空值）。
+	 * </p>
 	 *
-	 * @param query 包含產品 ID 的查詢訊息 (GetProductQuery)
+	 * @param query 包含產品唯一識別碼的查詢訊息 (GetProductQuery)
 	 * @return 產品 DTO；若不存在則回傳 null
 	 */
 	@QueryHandler
 	public ProductQueriedView handle(GetProductQuery query) {
-		log.info("[Query] 處理 GetProductQuery，查詢 ID: {}", query.productId());
+		log.info("[Query] 處理 GetProductQuery，查詢目標 ID: {}", query.productId());
 
 		return repository.findById(query.productId()).map(mapper::toQueriedView).orElse(null);
 	}
 
 	/**
-	 * 處理產品分頁查詢
+	 * 處理產品分頁與過濾查詢
 	 * <p>
-	 * 將過濾條件從 Query 訊息中提取，並透過 Repository 執行物理分頁。
+	 * 實作動態查詢邏輯： 1. 若提供 {@code name} 參數，則執行忽略大小寫的模糊查詢。 2. 結合 {@link PageRequest}
+	 * 將分頁參數（Page, Size）下壓至資料庫 SQL 層執行。
 	 * </p>
+	 * * @param query 包含篩選條件與分頁參數的查詢訊息 (FindProductsPagedQuery)
+	 * 
+	 * @return 包含分頁元數據（總頁數、總筆數）的包裝 DTO (ProductPageQueriedView)
 	 */
 	@QueryHandler
 	public ProductPageQueriedView handle(FindProductsPagedQuery query) {
-		log.info("[Query] 收到分頁查詢請求：名稱={}, 頁碼={}", query.name(), query.page());
+		log.info("[Query] 收到分頁查詢請求：名稱過濾={}, 目前頁碼={}, 每頁筆數={}", query.name(), query.page(), query.size());
 
+		// 封裝 Spring Data JPA 的分頁物件
 		Pageable pageable = PageRequest.of(query.page(), query.size());
 
+		// 根據條件執行物理分頁查詢
 		Page<ProductView> resultPage = (query.name() != null && !query.name().isBlank())
 				? repository.findByNameContainingIgnoreCase(query.name(), pageable)
 				: repository.findAll(pageable);
 
+		// 將結果內容轉換為 DTO 並包裝分頁統計資訊
 		List<ProductQueriedView> content = resultPage.getContent().stream().map(mapper::toQueriedView).toList();
+
+		log.debug("[Query] 分頁查詢完成，總筆數: {}, 總頁數: {}", resultPage.getTotalElements(), resultPage.getTotalPages());
 
 		return new ProductPageQueriedView(content, resultPage.getTotalElements(), resultPage.getTotalPages(),
 				resultPage.getNumber());

@@ -37,7 +37,9 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class ProductQueryService {
 
-	/** Axon 提供的查詢閘道器，負責訊息的路由與派發 */
+	/**
+	 * Axon 提供的查詢閘道器，負責訊息的路由與派發
+	 */
 	private final QueryGateway queryGateway;
 
 	/**
