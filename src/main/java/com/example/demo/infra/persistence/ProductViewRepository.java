@@ -4,7 +4,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import com.example.demo.application.domain.product.projection.ProductView;
+import com.example.demo.infra.projection.product.ProductView;
 
 public interface ProductViewRepository extends JpaRepository<ProductView, String> {
 

@@ -1,4 +1,4 @@
-package com.example.demo.application.domain.order.projection;
+package com.example.demo.infra.projection.order;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;

@@ -7,10 +7,10 @@ import org.axonframework.messaging.responsetypes.ResponseTypes;
 import org.axonframework.queryhandling.QueryGateway;
 import org.springframework.stereotype.Service;
 
-import com.example.demo.application.domain.product.projection.ProductPageQueriedView;
 import com.example.demo.application.domain.product.query.FindAllProductsQuery;
 import com.example.demo.application.domain.product.query.FindProductsPagedQuery;
 import com.example.demo.application.domain.product.query.GetProductQuery;
+import com.example.demo.application.shared.dto.ProductPageQueriedView;
 import com.example.demo.application.shared.dto.ProductQueriedView;
 
 import lombok.RequiredArgsConstructor;

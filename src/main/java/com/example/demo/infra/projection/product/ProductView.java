@@ -1,4 +1,4 @@
-package com.example.demo.application.domain.product.projection;
+package com.example.demo.infra.projection.product;
 
 import java.math.BigDecimal;
 

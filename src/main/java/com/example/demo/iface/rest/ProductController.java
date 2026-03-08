@@ -15,9 +15,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.example.demo.application.domain.product.command.CreateProductCommand;
 import com.example.demo.application.domain.product.command.UpdateProductCommand;
-import com.example.demo.application.domain.product.projection.ProductPageQueriedView;
 import com.example.demo.application.service.ProductCommandService;
 import com.example.demo.application.service.ProductQueryService;
+import com.example.demo.application.shared.dto.ProductPageQueriedView;
 import com.example.demo.application.shared.dto.ProductQueriedView;
 import com.example.demo.iface.dto.req.CreateProductResource;
 import com.example.demo.iface.dto.req.UpdateProductResource;

@@ -8,14 +8,14 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 
-import com.example.demo.application.domain.product.projection.ProductPageQueriedView;
-import com.example.demo.application.domain.product.projection.ProductView;
 import com.example.demo.application.domain.product.query.FindAllProductsQuery;
 import com.example.demo.application.domain.product.query.FindProductsPagedQuery;
 import com.example.demo.application.domain.product.query.GetProductQuery;
+import com.example.demo.application.shared.dto.ProductPageQueriedView;
 import com.example.demo.application.shared.dto.ProductQueriedView;
 import com.example.demo.infra.mapper.ProductMapper;
 import com.example.demo.infra.persistence.ProductViewRepository;
+import com.example.demo.infra.projection.product.ProductView;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

@@ -8,9 +8,9 @@ import org.springframework.stereotype.Component;
 import com.example.demo.application.domain.product.event.ProductCreatedEvent;
 import com.example.demo.application.domain.product.event.ProductUpdatedEvent;
 import com.example.demo.application.domain.product.event.StockReducedEvent;
-import com.example.demo.application.domain.product.projection.ProductView;
 import com.example.demo.application.shared.event.StockAddedEvent;
 import com.example.demo.infra.persistence.ProductViewRepository;
+import com.example.demo.infra.projection.product.ProductView;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

@@ -14,9 +14,9 @@ import com.example.demo.application.domain.order.event.OrderCreatedEvent;
 import com.example.demo.application.domain.order.event.OrderNotifiedEvent;
 import com.example.demo.application.domain.order.event.OrderReturnedEvent;
 import com.example.demo.application.domain.order.event.OrderShippedEvent;
-import com.example.demo.application.domain.order.projection.OrderItemView;
-import com.example.demo.application.domain.order.projection.OrderView;
 import com.example.demo.infra.persistence.OrderViewRepository;
+import com.example.demo.infra.projection.order.OrderItemView;
+import com.example.demo.infra.projection.order.OrderView;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

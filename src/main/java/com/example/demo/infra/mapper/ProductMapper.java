@@ -6,9 +6,9 @@ import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
 import com.example.demo.application.domain.product.command.CreateProductCommand;
-import com.example.demo.application.domain.product.projection.ProductView;
 import com.example.demo.application.shared.dto.ProductQueriedView;
 import com.example.demo.iface.dto.req.CreateProductResource;
+import com.example.demo.infra.projection.product.ProductView;
 
 /**
  * ProductMapper - 產品模組物件映射器

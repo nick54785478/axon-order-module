@@ -7,12 +7,12 @@ import org.mapstruct.Mapping;
 
 import com.example.demo.application.domain.order.aggregate.vo.OrderItem;
 import com.example.demo.application.domain.order.command.CreateOrderCommand;
-import com.example.demo.application.domain.order.projection.OrderItemView;
-import com.example.demo.application.domain.order.projection.OrderView;
 import com.example.demo.application.shared.dto.OrderQueriedView;
 import com.example.demo.config.config.MapStructConfiguration;
 import com.example.demo.iface.dto.req.CreateOrderItemResource;
 import com.example.demo.iface.dto.req.CreateOrderResource;
+import com.example.demo.infra.projection.order.OrderItemView;
+import com.example.demo.infra.projection.order.OrderView;
 
 /**
  * OrderMapper - 訂單模組物件映射器

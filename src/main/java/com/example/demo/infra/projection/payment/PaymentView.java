@@ -1,4 +1,4 @@
-package com.example.demo.application.domain.payment.projection;
+package com.example.demo.infra.projection.payment;
 
 import java.math.BigDecimal;
 

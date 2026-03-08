@@ -7,8 +7,8 @@ import com.example.demo.application.domain.payment.event.PaymentCancelledEvent;
 import com.example.demo.application.domain.payment.event.PaymentCreatedEvent;
 import com.example.demo.application.domain.payment.event.PaymentProcessedEvent;
 import com.example.demo.application.domain.payment.event.PaymentRefundedEvent;
-import com.example.demo.application.domain.payment.projection.PaymentView;
 import com.example.demo.infra.persistence.PaymentViewRepository;
+import com.example.demo.infra.projection.payment.PaymentView;
 
 import lombok.AllArgsConstructor;
 
